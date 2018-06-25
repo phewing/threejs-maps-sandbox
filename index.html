@@ -58,7 +58,7 @@
                 <div class="row">
                     <div class="six columns">
                         <h6>Address</h6>
-                        <input id=inpAddress value="77 Massachusetts Avenue, Cambridge, MA" style="width:100%"></input>
+                        <input id=inpAddress value="77 Massachusetts Avenue, Cambridge, MA" style="width:100%" onchange=></input>
                     </div>
                     <div class="three columns">
                         <h6>Longitude</h6>
@@ -75,25 +75,25 @@
                     <div class="three columns">
                         <h6>Display Mode</h6>
                         <select id="selMapType" style="width:100%" onchange="changeMapType();">
-                            <option selected="selected">Google Maps</option>
-                            <option>Google Maps Terrian</option>
-                            <option>Google Maps Satellite</option>
+                            <option>Google Maps</option>
+                            <option>Google Maps Terrain</option>
+                            <option selected="selected">Google Maps Satellite</option>
                             <option>Google Maps Hybrid</option>
                         </select>
                     </div>
                     <div class="three columns">
                         <h6>Toggle</h6>
-                        <button id="mapbutton" onclick="toogleMap();">Display Map</button>
+                        <button id="mapbutton" onclick="toggleMap();">Display Map</button>
                     </div>
-                    <div class="three columns">
-                        <h6>Map Width</h6>
-                        <input type="range" id="inpMapWidth" oninput="changeMapWidth(event.target.value);" min="50" max="500" style="width:100%">
-                        <output type="number" id="outMapWidth" align="center"></output>
+                    <div class="three columns" align="center">
+                        <h6>Map Width (m)</h6>
+                        <input type="range" id="inpMapWidth" oninput="changeMapWidth(event.target.value);" min="50" max="500" value="200" style="width:100%">
+                        <output type="number" id="outMapWidth" align="center" value="200">200</output>
                     </div>
-                    <div class="three columns">
-                        <h6>Map Length</h6>
-                        <input type="range" id="inpMapWidth" oninput="changeMapLength(event.target.value);" min="50" max="500" style="width:100%">
-                        <output type="number" id="outMapLength" align="center"></output>
+                    <div class="three columns" align="center">
+                        <h6>Map Length (m)</h6>
+                        <input type="range" id="inpMapLength" oninput="changeMapLength(event.target.value);" min="50" max="500" value="200" style="width:100%">
+                        <output type="number" id="outMapLength" align="center" value="200">200</output>
                     </div>
                 </div>
             </div>
@@ -129,7 +129,9 @@
         var mapWidth = 100;
         var mapLength = 100;
         var mapDisplay = false;
-        var mapType = 0;
+        var mapType = 2;
+        var sizeX = 250;
+        var sizeY = 250;
 
         var geocoder, origin_autocomplete;
         var googleMap, googleMapCenter;
@@ -147,12 +149,12 @@
         var min_x = 999999, max_x = -999999;
         var min_y = 999999, max_y = -999999;
 
-        var size = 250;
-        var tilesPerSide = 7; // odd number please
-        var tilesPerSideSquared = tilesPerSide * tilesPerSide;
+        var tilesPerSide_X = 7;
+        var tilesPerSide_Y = 7;
+        var totalTiles = tilesPerSide_X * tilesPerSide_Y;
         var pixelsPerTile = 256;
         var zoom = 21;
-        var count;
+        var count = 0;
 
         // You need to declare a geocoder to be able to input addresses.
         geocoder = new google.maps.Geocoder();
@@ -200,6 +202,62 @@
             { alert('You must select a valid locations from the drop-down list.'); }
         }
 
+        function toggleMap()
+        {
+            let mapbutton = document.getElementById("mapbutton");
+
+            if (placeMap)
+            {
+                if (placeMap.visible)
+                {
+                    placeMap.visible = false;
+                    mapbutton.innerHTML = "Map OFF";
+                }
+                else
+                {
+                    placeMap.visible = true;
+                    mapbutton.innerHTML = "Map ON";
+                }
+            }
+        }
+
+        function changeMapType()
+        {
+            switch(selMapType.value)
+            {
+                case "Google Maps":
+                    mapType = 0;
+                    break;
+                case "Google Maps Terrain":
+                    mapType = 1;
+                    break;
+                case "Google Maps Satellite":
+                    mapType = 2;
+                    break;
+                case "Google Maps Hybrid":
+                    mapType = 3;
+                    break;
+                default:
+                    break;
+            }
+
+            drawMapOverlay(longitude, latitude, mapType, true, sizeX, sizeY);
+        }
+
+        function changeMapWidth(event)
+        {
+            sizeX = parseFloat(event);
+            outMapWidth.value = outMapWidth.innerHTML = sizeX;
+            drawMapOverlay(longitude, latitude, mapType, true, sizeX, sizeY);
+        }
+
+        function changeMapLength(event)
+        {
+            sizeY = parseFloat(event);
+            outMapLength.value = outMapLength.innerHTML = sizeY;
+            drawMapOverlay(longitude, latitude, mapType, true, sizeX, sizeY);
+        }
+
         function setCenter()
         {
             googleMapCenter = { lat: parseFloat( inpLatitude.value ), lng: parseFloat( inpLongitude.value ) };
@@ -215,7 +273,7 @@
                     if (results[1])
                     {
                         inpAddress.value = results[1].formatted_address;
-                        drawMapOverlay(parseFloat(inpLongitude.value), parseFloat(inpLatitude.value), mapType, true, size);
+                        drawMapOverlay(parseFloat(inpLongitude.value), parseFloat(inpLatitude.value), mapType, true, sizeX, sizeY);
                     }
                     else
                     { window.alert('No results found.'); }
@@ -225,7 +283,7 @@
             });
         }
 
-        function drawMapOverlay(longitude, latitude, mapType, isSI, size)
+        function drawMapOverlay(longitude, latitude, mapType, isSI, sizeX, sizeY)
         {
             const mapTypes = [
                 ['Google Maps','https://mt1.google.com/vt/x='],
@@ -236,57 +294,70 @@
 
             var geometry, material, mesh;
 
-            geometry = new THREE.PlaneBufferGeometry( size , size );
+            if (placeMap)
+            {
+                scene.remove(placeMap);
+                count = 1;
+            }
+
+            geometry = new THREE.PlaneBufferGeometry( sizeX , sizeY );
             geometry.applyMatrix( new THREE.Matrix4().makeRotationX( Math.PI / 2) );
             material = new THREE.MeshPhongMaterial();
             placeMap = new THREE.Mesh(geometry, material);
             placeMap.name = "placemap";
             placeMap.receiveShadow = true;
-            placeMap.position.z = -1;
+            placeMap.position.z = -0.5;
 
-            var groundExtent = size; // assuming scene is being described in meters;
+            var groundExtent_X = sizeX; // assuming scene is being described in meters;
+            var groundExtent_Y = sizeY;
             var metersPerPx = metersPerPixel(latitude, zoom);
             var metersPerTile = metersPerPx * 256;
 
-            tilesPerSide = Math.ceil(groundExtent / metersPerTile);
+            tilesPerSide_X = Math.ceil(groundExtent_X / metersPerTile);
+            tilesPerSide_Y = Math.ceil(groundExtent_Y / metersPerTile);
 
             // Adjust zoom and tilesPerSide to avoid having to load too many tiles at once.
-            if (tilesPerSide > 8) {
-                while (tilesPerSide > 8) {
+            if (tilesPerSide_X > 7 || tilesPerSide_Y > 7)
+            {
+                while (tilesPerSide_X > 7 || tilesPerSide_Y > 7)
+                {
                     zoom--;
                     metersPerPx = metersPerPixel(latitude, zoom);
                     metersPerTile = metersPerPx * 256;
-                    tilesPerSide = Math.ceil(groundExtent / metersPerTile);
+                    tilesPerSide_X = Math.ceil(groundExtent_X / metersPerTile);
+                    tilesPerSide_Y = Math.ceil(groundExtent_Y / metersPerTile);
                 }
             }
 
-            tilesPerSideSquared = tilesPerSide * tilesPerSide;
+            totalTiles = tilesPerSide_X * tilesPerSide_Y;
 
             // Create texture for the canvas overlay
             placeMapCanvas = document.createElement( 'canvas' );
-            placeMapCanvas.width = placeMapCanvas.height = pixelsPerTile * tilesPerSide;
-            placeMapContext = placeMapCanvas.getContext( '2d' );
+            placeMapCanvas.width = pixelsPerTile * tilesPerSide_X;
+            placeMapCanvas.height = pixelsPerTile * tilesPerSide_Y;
+            placeMapContext = placeMapCanvas.getContext('2d');
 
-            var baseURL, tileX, tileY, tileOffset, count;
+            var baseURL, tileX, tileY, tileOffset;
             baseURL = mapTypes[ mapType ][ 1 ];
 
-            tileOffset = Math.floor( 0.5 * tilesPerSide );
+            tileOffsetX = Math.floor( 0.5 * tilesPerSide_X );
+            tileOffsetY = Math.floor( 0.5 * tilesPerSide_Y );
 
-            tileX = Math.floor(lon2tile(longitude, zoom)) - tileOffset;
-            tileY = Math.floor(lat2tile(latitude, zoom)) - tileOffset;
+            tileX = Math.floor(lon2tile(longitude, zoom)) - tileOffsetX;
+            tileY = Math.floor(lat2tile(latitude, zoom)) - tileOffsetY;
 
             var pxOffsetX = (lon2tile(longitude, zoom) - Math.floor(lon2tile(longitude, zoom)));
             var pxOffsetY = (lat2tile(latitude, zoom) - Math.floor(lat2tile(latitude, zoom)));
-            count = 0;
 
-            for ( var x = 0; x < tilesPerSide + 1; x++ ) {
-                for ( var y = 0; y < tilesPerSide + 1; y++ ) {
+            for ( var x = 0; x < tilesPerSide_X + 1; x++ ) {
+                for ( var y = 0; y < tilesPerSide_Y + 1; y++ ) {
                     loadImage( ( x + tileX ) + '&y=' + ( y + tileY ) + '&z=' + zoom, x, y, pxOffsetX, pxOffsetY, baseURL );
                 }
             }
 
             // Map needs to be flipped to get directions right
             placeMap.applyMatrix( new THREE.Matrix4().makeRotationX(Math.PI) );
+            scene.add(placeMap);
         }
 
         function loadImage(fileName, x, y, xOffset, yOffset, baseURL)
@@ -302,14 +373,13 @@
                 placeMapContext.drawImage( img, xOffset, yOffset , 256 + xOffset, 256 + yOffset, x * pixelsPerTile, y * pixelsPerTile, pixelsPerTile, pixelsPerTile);
                 count++;
 
-                if ( count === tilesPerSideSquared )
+                if ( count === totalTiles )
                 {
                     placeMap.material = new THREE.MeshLambertMaterial( { color: 0xffffff, map: texture, side: 2, opacity: opacity , transparent: true } );
                     placeMap.material.needsUpdate = true;
                 }
             }
             img.src = baseURL + fileName;
-            console.log(img.src);
         }
 
         function lon2tile(longitude, zoom)
@@ -335,8 +405,8 @@
             var height = 0.625 * width;
 
             // Create a camera and give it an initial position.
-            camera = new THREE.PerspectiveCamera(40, width / height, 1, 1000);
-            camera.position.set(100, 100, 100);
+            camera = new THREE.PerspectiveCamera(60, width / height, 1, 1000);
+            camera.position.set(200, 200, 200);
 
             // Update the WebGL render window if the browser window changes size,
             // or if the camera changes orientation.
@@ -382,10 +452,7 @@
             scene.add(lightAmbient);
 
             // Draw the map.
-            drawMapOverlay(longitude, latitude, 3, true, size);
-            scene.add(placeMap);
-
-            console.log(placeMapContext.getImageData(0, 0, 1280, 1280));
+            drawMapOverlay(longitude, latitude, mapType, true, sizeX, sizeY);
         }
 
         function animateThreejs()
@@ -404,6 +471,7 @@
         animateThreejs();
 
         ///////////////////////////////////////////////////////////////////////////////
+
     </script>
 </body>
 </html>
