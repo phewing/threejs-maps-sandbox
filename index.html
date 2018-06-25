@@ -58,7 +58,7 @@
                 <div class="row">
                     <div class="six columns">
                         <h6>Address</h6>
-                        <input id=inpAddress value="77 Massachusetts Avenue, Cambridge, MA" style="width:100%" onchange=></input>
+                        <input id="inpAddress" value="77 Massachusetts Avenue, Cambridge, MA" style="width:100%" onchange=></input>
                     </div>
                     <div class="three columns">
                         <h6>Longitude</h6>
@@ -161,7 +161,7 @@
 
         // Add a location auto-completer for encoding the input address into
         // a latitude and longitude.
-        var origin_autocomplete = new google.maps.places.Autocomplete(inpAddress);
+        var origin_autocomplete = new google.maps.places.Autocomplete(document.getElementById("inpAddress"));
         origin_autocomplete.addListener('place_changed', getNewPlace, false);
 
 
