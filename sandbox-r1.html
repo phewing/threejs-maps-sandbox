@@ -112,9 +112,8 @@
 
         // Declare variables for physical scene elements and symbols.
         var boxGeometry, boxMaterial, boxMesh;
-        var mapGeometry, mapMaterial, mapMesh;
 
-        var placeMap, placeMapCanvas, placeMapContext;
+        var placeMap, placeMapCanvas, placeMapContext, texture;
         var lightAmbient;
 
         var opacity = 0.85;
@@ -148,14 +147,12 @@
         var min_x = 999999, max_x = -999999;
         var min_y = 999999, max_y = -999999;
 
-        var pixelsPerTile = 256;
-        var count;
-
-        var size;
+        var size = 250;
         var tilesPerSide = 7; // odd number please
         var tilesPerSideSquared = tilesPerSide * tilesPerSide;
         var pixelsPerTile = 256;
         var zoom = 21;
+        var count;
 
         // You need to declare a geocoder to be able to input addresses.
         geocoder = new google.maps.Geocoder();
@@ -165,55 +162,6 @@
         var origin_autocomplete = new google.maps.places.Autocomplete(inpAddress);
         origin_autocomplete.addListener('place_changed', getNewPlace, false);
 
-        function init()
-        {
-            // Declare a WebGL render window and add it to the web page.
-            renderer = new THREE.WebGLRenderer({ alpha: 1, antialias: true });
-            sceneContainer = document.getElementById('myScene');
-
-            let viewerWidth = sceneContainer.offsetWidth;
-            let viewerHeight = 0.625 * viewerWidth;
-
-            renderer.setSize(viewerWidth, viewerHeight);
-            sceneContainer.appendChild(renderer.domElement);
-
-            // Create a camera and give it an initial position.
-            camera = new THREE.PerspectiveCamera(40, viewerWidth / viewerHeight, 1, 1000);
-            camera.position.set(100, 100, 100);
-
-            // Update the WebGL render window if the browser window changes size,
-            // or if the camera changes orientation.
-            window.addEventListener('resize', onResizeOrReorient, false);
-            window.addEventListener('orientationchange', onResizeOrReorient, false);
-
-            // Add some controls for the camera.
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-            // Create a new Three.js scene.
-            scene = new THREE.Scene();
-
-            // Create a 3D axis symbol and add it to the scene.
-            let axesHelper = new THREE.AxesHelper(50);
-            scene.add(axesHelper);
-
-            // Create some Three.js geometry.
-            boxGeometry = new THREE.BoxGeometry(50, 50, 50);
-
-            // Create a material to apply to the geometry.
-            boxMaterial = new THREE.MeshNormalMaterial();
-
-            // Convert the geometry to a Three.js mesh.
-            boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-
-            // Add the mesh version of the geometry to the Three.js scene.
-            scene.add(boxMesh);
-        }
-
-        function animate()
-        {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
-        }
 
         ///////////////////////////////////////////////////////////////////////////////
         // EVENT HANDLERS + HELPER FUNCTIONS                                         //
@@ -246,10 +194,16 @@
                 longitude = inpLongitude.value = googleMapCenter.lng();
 
                 // Do anything else, if need be, here.
-                //     changeSite(latitude, longitude, theBuilding);
+                setCenter();
             }
             else
             { alert('You must select a valid locations from the drop-down list.'); }
+        }
+
+        function setCenter()
+        {
+            googleMapCenter = { lat: parseFloat( inpLatitude.value ), lng: parseFloat( inpLongitude.value ) };
+            geocodeLatLng();
         }
 
         function geocodeLatLng()
@@ -261,7 +215,7 @@
                     if (results[1])
                     {
                         inpAddress.value = results[1].formatted_address;
-                        changeSite(parseFloat(inpLongitude.value), parseFloat(inpLatitude.value), theBuilding);
+                        drawMapOverlay(parseFloat(inpLongitude.value), parseFloat(inpLatitude.value), mapType, true, size);
                     }
                     else
                     { window.alert('No results found.'); }
@@ -269,39 +223,6 @@
                 else
                 { window.alert('Geocoder failed due to: ' + status); }
             });
-        }
-
-        function changeSite(lng, lat, speedBuilding)
-        {
-            speedBuilding.longitude = longitude = lng;
-            speedBuilding.latitude = latitude = lat;
-            refreshMap(lng, lat, speedBuilding)
-        }
-
-        function refreshMap(lng, lat, speedBuilding)
-        {
-            var baseURL = "https://maps.googleapis.com/maps/api/timezone/json";
-            var timestamp = new Date().getTime() / 1000;
-            var apiCall = baseURL + "?location=" + [latitude, longitude] + '&timestamp=' + timestamp;
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', apiCall);
-            xhr.onload = function()
-            {
-                if (xhr.status === 200)
-                { var output = JSON.parse(xhr.responseText); }
-                if (output.status == 'OK')
-                {
-                    speedBuilding.location.rawUTCOffset = output.rawOffset;
-                    speedBuilding.location.dstUTCOffset = output.dstOffset;
-                    speedBuilding.location.timeZoneID = output.timeZoneID;
-                    speedBuilding.location.timeZoneName = output.timeZoneName;
-
-                    // document.getElementById('ifr').contentWindow.postMessage(theBuilding, '*');
-                }
-                else
-                { alert('Timezone request failed with a status of ' + xhr.status + ';' + ' cannot refresh map!'); }
-            };
-            xhr.send();
         }
 
         function drawMapOverlay(longitude, latitude, mapType, isSI, size)
@@ -314,15 +235,16 @@
             ];
 
             var geometry, material, mesh;
+
             geometry = new THREE.PlaneBufferGeometry( size , size );
             geometry.applyMatrix( new THREE.Matrix4().makeRotationX( Math.PI / 2) );
             material = new THREE.MeshPhongMaterial();
-            placeMap = new THREE.Mesh( geometry, material );
+            placeMap = new THREE.Mesh(geometry, material);
             placeMap.name = "placemap";
             placeMap.receiveShadow = true;
             placeMap.position.z = -1;
 
-            var groundExtent = 2 * size / 3.28084; // assuming scene is being described in feet;
+            var groundExtent = size; // assuming scene is being described in meters;
             var metersPerPx = metersPerPixel(latitude, zoom);
             var metersPerTile = metersPerPx * 256;
 
@@ -354,7 +276,7 @@
             tileY = Math.floor(lat2tile(latitude, zoom)) - tileOffset;
 
             var pxOffsetX = (lon2tile(longitude, zoom) - Math.floor(lon2tile(longitude, zoom)));
-            var pxOffsetY = (lat2tile(longitude, zoom) - Math.floor(lat2tile(longitude, zoom)));
+            var pxOffsetY = (lat2tile(latitude, zoom) - Math.floor(lat2tile(latitude, zoom)));
             count = 0;
 
             for ( var x = 0; x < tilesPerSide + 1; x++ ) {
@@ -364,17 +286,15 @@
             }
 
             // Map needs to be flipped to get directions right
-            placeMap.applyMatrix( new THREE.Matrix4().makeRotationX( Math.PI) );
-
-            return placeMap;
+            placeMap.applyMatrix( new THREE.Matrix4().makeRotationX(Math.PI) );
         }
 
-        function loadImage( fileName, x, y, xOffset, yOffset, baseURL)
+        function loadImage(fileName, x, y, xOffset, yOffset, baseURL)
         {
             var img = document.createElement( 'img' );
             img.crossOrigin = 'anonymous';
 
-            var texture = new THREE.Texture( placeMapCanvas );
+            texture = new THREE.Texture( placeMapCanvas );
             texture.minFilter = texture.magFilter = THREE.NearestFilter;
             texture.needsUpdate = true;
             img.onload = function()
@@ -392,94 +312,14 @@
             console.log(img.src);
         }
 
-        function geocodeLatLng()
-        {
-            geocoder.geocode( { 'location': googleMapCenter }, function( results, status )
-            {
-                if ( status === google.maps.GeocoderStatus.OK )
-                {
-                    if ( results[ 1 ] )
-                    {
-                        inpAddress.value = results[1].formatted_address;
-                    }
-                    else
-                    {
-                        window.alert( 'No results found' );
-                    }
-                }
-                else
-                {
-                    window.alert( 'Geocoder failed due to: ' + status );
-                }
-            });
-        }
-
-        function setCenter()
-        {
-            googleMapCenter = { lat: parseFloat( inpLatitude.value ), lng: parseFloat( inpLongitude.value ) };
-            googleMap.setCenter( googleMapCenter );
-
-            googleMap.setZoom( zoom );
-            geocodeLatLng();
-            messagePlace.innerHTML = 'Now click in this box & select a location from the drop-down list';
-        }
-
-        function lon2tile( longitude, zoom )
+        function lon2tile(longitude, zoom)
         {
             return ( longitude + 180 ) / 360 * Math.pow( 2, zoom );
         }
 
-        function lat2tile( latitude, zoom )
+        function lat2tile(latitude, zoom)
         {
-            return (Math.floor((1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI/180))/Math.PI) / 2 * Math.pow(2,zoom)));
-        }
-
-        function getMercatorX(longitude, refLng = -180.0)
-        {
-            return (longitude - refLng) / 360;
-        }
-
-        function getMercatorY(latitude)
-        {
-            var typicalCalc = Math.log(Math.tan((pi / 4.0) + (latitude * (pi / 180) / 2)));
-            if (typicalCalc < 0) {
-                return 0.5 - (typicalCalc / 2);
-            }
-            else
-            {
-                return typicalCalc / 2;
-            }
-        }
-
-        function mercatorXtoLng(x, refLng = -180.0)
-        {
-            return refLng + (x * 360);
-        }
-
-        function mercatorYtoLng(y)
-        {
-            return Math.atan(Math.exp(y)) - (pi / 2);
-        }
-
-        function distanceToLatitude(latitude, distance)
-        {
-            console.log("Latitude distance: " + distance);
-            console.log("Latitude numerator: " + numerator);
-
-            var oneDegreeLat = equatorialRadius * (1 - eccentricitySquared) * Math.pow((1 - eccentricitySquared * Math.pow(Math.sin(Math.abs(latitude) * (pi / 180)), 2)), -3.0/2.0) * (pi / 180);
-
-            console.log("Distance per degree latitude: " + oneDegreeLat);
-
-            return distance / oneDegreeLat;
-        }
-
-        function distanceToLongitude(latitude, distance)
-        {
-            console.log("Longitude distance: " + distance);
-            var oneDegreeLng = pi * equatorialRadius * Math.cos(latitude * (pi / 180))
-                            / (180 * Math.sqrt(1 - eccentricitySquared * Math.pow(Math.sin(Math.abs(latitude) * (pi / 180)), 0.5)));
-            console.log("Distance per degree longitude: " + oneDegreeLng);
-            return distance / oneDegreeLng;
+            return ((1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI/180))/Math.PI) / 2 * Math.pow(2,zoom));
         }
 
         function metersPerPixel(latitude, zoomLevel)
@@ -503,8 +343,8 @@
             window.addEventListener('resize', onResizeOrReorient, false);
             window.addEventListener('orientationchange', onResizeOrReorient, false);
 
-            renderer = new THREE.WebGLRenderer( { alpha: 1, antialias: false}  );
-            renderer.setClearColor( 0xffffff, 1 );
+            renderer = new THREE.WebGLRenderer({ alpha: 1, antialias: false });
+            renderer.setClearColor(0xffffff, 1);
             renderer.setSize( width, height );
             
             renderer.shadowMap.enabled = true;
@@ -530,45 +370,40 @@
             scene.add(axesHelper);
 
             // Create some Three.js geometry.
-            boxGeometry = new THREE.BoxGeometry(50, 50, 50);
-
-            // Create a material to apply to the geometry.
+            boxGeometry = new THREE.BoxGeometry(20, 20, 20);
             boxMaterial = new THREE.MeshNormalMaterial();
-
-            // Convert the geometry to a Three.js mesh.
             boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-
-            // Add the mesh version of the geometry to the Three.js scene.
+            boxMesh.position.y = 10;
             scene.add(boxMesh);
 
             // Add an ambient light source.
-            lightAmbient = new THREE.AmbientLight( 0xaaaaaa );
+            lightAmbient = new THREE.AmbientLight(0xaaaaaa);
             lightAmbient.intensity = 0.5;
-            scene.add( lightAmbient ); 
+            scene.add(lightAmbient);
 
-            placeMap = drawMapOverlay(longitude, latitude, 3, true, 200);
-
+            // Draw the map.
+            drawMapOverlay(longitude, latitude, 3, true, size);
             scene.add(placeMap);
+
+            console.log(placeMapContext.getImageData(0, 0, 1280, 1280));
         }
 
         function animateThreejs()
         {
             requestAnimationFrame( animateThreejs );
-
             renderer.autoClear = true;
-
             controls.update();
             renderer.render( scene, camera );
         }
-
 
         ///////////////////////////////////////////////////////////////////////////////
         // INITIALIZE + ANIMATE                                                      //
         ///////////////////////////////////////////////////////////////////////////////
 
-        // Initialize and animate the scene.
         initThreejs();
         animateThreejs();
+
+        ///////////////////////////////////////////////////////////////////////////////
     </script>
 </body>
 </html>
