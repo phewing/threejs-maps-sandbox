@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Basic Page Needs -->
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Three.js Maps Sandbox r1</title>
+
+    <!-- Mobile-Specific Metas -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css?family=Raleway:400,300,600" rel='stylesheet' type='text/css'>
+
+    <!-- CSS -->
+    <link rel="stylesheet" type="text/css" href="css/normalize.css"/>
+    <link rel="stylesheet" type="text/css" href="css/skeleton.css"/>
+    <link rel="stylesheet" type="text/css" href="css/skeleton-tabs.css"/>
+
+    <!-- External Scripts -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/dev/build/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/dev/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- Local Scripts -->
+    <script src="js/skeleton-tabs.js"></script>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Page Header -->
+        <div class="row">
+            <div class=class="u-full-width" align="center" style="padding-top:3rem">
+                <h3>Three.js + Google Maps</h3>
+            </div>
+        </div>
+
+        <!-- Scene Viewer -->
+        <div class="row">
+            <div id="myScene" class="u-full-width"></div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <ul class="tab-nav">
+            <li>
+                <a class="button active" href="#location-controls">Location</a>
+            </li>
+            <li>
+                <a class="button" href="#map-controls">Map</a>
+            </li>
+        </ul>
+        <!-- End of Tab Navigation -->
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <div class="tab-pane active" id="location-controls">
+                <div class="row">
+                    <div class="six columns">
+                        <h6>Address</h6>
+                        <input id=inpAddress value="77 Massachusetts Avenue, Cambridge, MA" style="width:100%"></input>
+                    </div>
+                    <div class="three columns">
+                        <h6>Longitude</h6>
+                        <input id="inpLongitude" value="-71.0931389" onchange="setCenter();" style="width:100%"></input>
+                    </div>
+                    <div class="three columns">
+                        <h6>Latitude</h6>
+                        <input id="inpLatitude" value="42.3592444" onchange="setCenter();" style="width:100%"></input>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane" id="map-controls">
+                <div class="row">
+                    <div class="three columns">
+                        <h6>Display Mode</h6>
+                        <select id="selMapType" style="width:100%" onchange="changeMapType();">
+                            <option selected="selected">Google Maps</option>
+                            <option>Google Maps Terrian</option>
+                            <option>Google Maps Satellite</option>
+                            <option>Google Maps Hybrid</option>
+                        </select>
+                    </div>
+                    <div class="three columns">
+                        <h6>Toggle</h6>
+                        <button id="mapbutton" onclick="toogleMap();">Display Map</button>
+                    </div>
+                    <div class="three columns">
+                        <h6>Map Width</h6>
+                        <input type="range" id="inpMapWidth" oninput="changeMapWidth(event.target.value);" min="50" max="500" style="width:100%">
+                        <output type="number" id="outMapWidth" align="center"></output>
+                    </div>
+                    <div class="three columns">
+                        <h6>Map Length</h6>
+                        <input type="range" id="inpMapWidth" oninput="changeMapLength(event.target.value);" min="50" max="500" style="width:100%">
+                        <output type="number" id="outMapLength" align="center"></output>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- End of Tab Content -->
+
+    </div>
+    <!-- End of Container -->
+
+    <!-- Scene Initialization and Animation -->
+    <script>
+        // Declare variables for viewer-related scene elements.
+        var renderer, sceneContainer;
+        var camera, controls;
+        var scene;
+
+        // Declare variables for physical scene elements and symbols.
+        var boxGeometry, boxMaterial, boxMesh;
+
+        var placeMap, placeMapCanvas, placeMapContext, texture;
+        var lightAmbient;
+
+        var opacity = 0.85;
+
+        // Declare variables geometry scene control parameters.
+        var defaultPlace = "Cambridge, MA";
+        var defaultLongitude = -71.0931389;
+        var defaultLatitude = 42.3592444;
+
+        var longitude = defaultLongitude;
+        var latitude = defaultLatitude;
+
+        var mapWidth = 100;
+        var mapLength = 100;
+        var mapDisplay = false;
+        var mapType = 0;
+
+        var geocoder, origin_autocomplete;
+        var googleMap, googleMapCenter;
+
+        var pi = Math.PI;
+        var d2r = pi / 180;
+
+        var equatorialRadius = 6378137.0;  // in meters
+        var polarRadius = 6356752.3142; // in meters
+        var inverseFlattening = 298.257223563;
+        var eccentricitySquared = 0.00669437999014;
+
+        var earthCircumference = 2 * pi * equatorialRadius;
+
+        var min_x = 999999, max_x = -999999;
+        var min_y = 999999, max_y = -999999;
+
+        var size = 250;
+        var tilesPerSide = 7; // odd number please
+        var tilesPerSideSquared = tilesPerSide * tilesPerSide;
+        var pixelsPerTile = 256;
+        var zoom = 21;
+        var count;
+
+        // You need to declare a geocoder to be able to input addresses.
+        geocoder = new google.maps.Geocoder();
+
+        // Add a location auto-completer for encoding the input address into
+        // a latitude and longitude.
+        var origin_autocomplete = new google.maps.places.Autocomplete(inpAddress);
+        origin_autocomplete.addListener('place_changed', getNewPlace, false);
+
+
+        ///////////////////////////////////////////////////////////////////////////////
+        // EVENT HANDLERS + HELPER FUNCTIONS                                         //
+        ///////////////////////////////////////////////////////////////////////////////
+
+        function onResizeOrReorient()
+        {
+            let viewerWidth = sceneContainer.offsetWidth;
+            let viewerHeight = 0.625 * viewerWidth;
+
+            // Resize the WebGL render window.
+            renderer.setSize(viewerWidth, viewerHeight);
+
+            // Re-orient the camera.
+            camera.aspect = viewerWidth / viewerHeight;
+            camera.updateProjectionMatrix();
+        }
+
+        function getNewPlace()
+        {
+            var place;
+            place = origin_autocomplete.getPlace();
+            if (place.geometry)
+            {
+                // Get the location.
+                googleMapCenter = place.geometry.location;
+
+                // Get the longitude and latitude.
+                latitude = inpLatitude.value = googleMapCenter.lat();
+                longitude = inpLongitude.value = googleMapCenter.lng();
+
+                // Do anything else, if need be, here.
+                setCenter();
+            }
+            else
+            { alert('You must select a valid locations from the drop-down list.'); }
+        }
+
+        function setCenter()
+        {
+            googleMapCenter = { lat: parseFloat( inpLatitude.value ), lng: parseFloat( inpLongitude.value ) };
+            geocodeLatLng();
+        }
+
+        function geocodeLatLng()
+        {
+            geocoder.geocode({ 'location': googleMapCenter }, function(results, status)
+            {
+                if (status === google.maps.GeocoderStatus.OK)
+                {
+                    if (results[1])
+                    {
+                        inpAddress.value = results[1].formatted_address;
+                        drawMapOverlay(parseFloat(inpLongitude.value), parseFloat(inpLatitude.value), mapType, true, size);
+                    }
+                    else
+                    { window.alert('No results found.'); }
+                }
+                else
+                { window.alert('Geocoder failed due to: ' + status); }
+            });
+        }
+
+        function drawMapOverlay(longitude, latitude, mapType, isSI, size)
+        {
+            const mapTypes = [
+                ['Google Maps','https://mt1.google.com/vt/x='],
+                ['Google Maps Terrain','https://mt1.google.com/vt/lyrs=t&x='],
+                ['Google Maps Satellite','https://mt1.google.com/vt/lyrs=s&x='],
+                ['Google Maps Hybrid','https://mt1.google.com/vt/lyrs=y&x='],
+            ];
+
+            var geometry, material, mesh;
+
+            geometry = new THREE.PlaneBufferGeometry( size , size );
+            geometry.applyMatrix( new THREE.Matrix4().makeRotationX( Math.PI / 2) );
+            material = new THREE.MeshPhongMaterial();
+            placeMap = new THREE.Mesh(geometry, material);
+            placeMap.name = "placemap";
+            placeMap.receiveShadow = true;
+            placeMap.position.z = -1;
+
+            var groundExtent = size; // assuming scene is being described in meters;
+            var metersPerPx = metersPerPixel(latitude, zoom);
+            var metersPerTile = metersPerPx * 256;
+
+            tilesPerSide = Math.ceil(groundExtent / metersPerTile);
+
+            // Adjust zoom and tilesPerSide to avoid having to load too many tiles at once.
+            if (tilesPerSide > 8) {
+                while (tilesPerSide > 8) {
+                    zoom--;
+                    metersPerPx = metersPerPixel(latitude, zoom);
+                    metersPerTile = metersPerPx * 256;
+                    tilesPerSide = Math.ceil(groundExtent / metersPerTile);
+                }
+            }
+
+            tilesPerSideSquared = tilesPerSide * tilesPerSide;
+
+            // Create texture for the canvas overlay
+            placeMapCanvas = document.createElement( 'canvas' );
+            placeMapCanvas.width = placeMapCanvas.height = pixelsPerTile * tilesPerSide;
+            placeMapContext = placeMapCanvas.getContext( '2d' );
+
+            var baseURL, tileX, tileY, tileOffset, count;
+            baseURL = mapTypes[ mapType ][ 1 ];
+
+            tileOffset = Math.floor( 0.5 * tilesPerSide );
+
+            tileX = Math.floor(lon2tile(longitude, zoom)) - tileOffset;
+            tileY = Math.floor(lat2tile(latitude, zoom)) - tileOffset;
+
+            var pxOffsetX = (lon2tile(longitude, zoom) - Math.floor(lon2tile(longitude, zoom)));
+            var pxOffsetY = (lat2tile(latitude, zoom) - Math.floor(lat2tile(latitude, zoom)));
+            count = 0;
+
+            for ( var x = 0; x < tilesPerSide + 1; x++ ) {
+                for ( var y = 0; y < tilesPerSide + 1; y++ ) {
+                    loadImage( ( x + tileX ) + '&y=' + ( y + tileY ) + '&z=' + zoom, x, y, pxOffsetX, pxOffsetY, baseURL );
+                }
+            }
+
+            // Map needs to be flipped to get directions right
+            placeMap.applyMatrix( new THREE.Matrix4().makeRotationX(Math.PI) );
+        }
+
+        function loadImage(fileName, x, y, xOffset, yOffset, baseURL)
+        {
+            var img = document.createElement( 'img' );
+            img.crossOrigin = 'anonymous';
+
+            texture = new THREE.Texture( placeMapCanvas );
+            texture.minFilter = texture.magFilter = THREE.NearestFilter;
+            texture.needsUpdate = true;
+            img.onload = function()
+            {
+                placeMapContext.drawImage( img, xOffset, yOffset , 256 + xOffset, 256 + yOffset, x * pixelsPerTile, y * pixelsPerTile, pixelsPerTile, pixelsPerTile);
+                count++;
+
+                if ( count === tilesPerSideSquared )
+                {
+                    placeMap.material = new THREE.MeshLambertMaterial( { color: 0xffffff, map: texture, side: 2, opacity: opacity , transparent: true } );
+                    placeMap.material.needsUpdate = true;
+                }
+            }
+            img.src = baseURL + fileName;
+            console.log(img.src);
+        }
+
+        function lon2tile(longitude, zoom)
+        {
+            return ( longitude + 180 ) / 360 * Math.pow( 2, zoom );
+        }
+
+        function lat2tile(latitude, zoom)
+        {
+            return ((1 - Math.log(Math.tan(latitude * Math.PI / 180) + 1 / Math.cos(latitude * Math.PI/180))/Math.PI) / 2 * Math.pow(2,zoom));
+        }
+
+        function metersPerPixel(latitude, zoomLevel)
+        {
+            return earthCircumference * Math.cos(latitude * (pi / 180)) / Math.pow(2, zoomLevel + 8);
+        }
+
+        function initThreejs()
+        {
+            sceneContainer = document.getElementById('myScene');
+
+            var width = sceneContainer.offsetWidth;
+            var height = 0.625 * width;
+
+            // Create a camera and give it an initial position.
+            camera = new THREE.PerspectiveCamera(40, width / height, 1, 1000);
+            camera.position.set(100, 100, 100);
+
+            // Update the WebGL render window if the browser window changes size,
+            // or if the camera changes orientation.
+            window.addEventListener('resize', onResizeOrReorient, false);
+            window.addEventListener('orientationchange', onResizeOrReorient, false);
+
+            renderer = new THREE.WebGLRenderer({ alpha: 1, antialias: false });
+            renderer.setClearColor(0xffffff, 1);
+            renderer.setSize( width, height );
+            
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.gammaInput = true;
+            renderer.gammaOutput = true;
+            renderer.shadowMap.soft    = true;
+            renderer.shadowMap.renderReverseSided = false;
+
+            // According to Juan, set renderer so that when opacity goes below 1 you don't have the z conflict on the faces.
+            renderer.sortObjects = false;
+
+            sceneContainer.appendChild(renderer.domElement);
+
+            // Add some controls for the camera.
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+            // Add a scene and stuff to it.
+            scene = new THREE.Scene();
+
+            // Create a 3D axis symbol and add it to the scene.
+            let axesHelper = new THREE.AxesHelper(50);
+            scene.add(axesHelper);
+
+            // Create some Three.js geometry.
+            boxGeometry = new THREE.BoxGeometry(20, 20, 20);
+            boxMaterial = new THREE.MeshNormalMaterial();
+            boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+            boxMesh.position.y = 10;
+            scene.add(boxMesh);
+
+            // Add an ambient light source.
+            lightAmbient = new THREE.AmbientLight(0xaaaaaa);
+            lightAmbient.intensity = 0.5;
+            scene.add(lightAmbient);
+
+            // Draw the map.
+            drawMapOverlay(longitude, latitude, 3, true, size);
+            scene.add(placeMap);
+
+            console.log(placeMapContext.getImageData(0, 0, 1280, 1280));
+        }
+
+        function animateThreejs()
+        {
+            requestAnimationFrame( animateThreejs );
+            renderer.autoClear = true;
+            controls.update();
+            renderer.render( scene, camera );
+        }
+
+        ///////////////////////////////////////////////////////////////////////////////
+        // INITIALIZE + ANIMATE                                                      //
+        ///////////////////////////////////////////////////////////////////////////////
+
+        initThreejs();
+        animateThreejs();
+
+        ///////////////////////////////////////////////////////////////////////////////
+    </script>
+</body>
+</html>
